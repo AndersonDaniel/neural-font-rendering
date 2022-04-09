@@ -81,7 +81,9 @@ def make_mask(downscale_ind, mask_size):
 
 
 def masked_mse(y_true, y_pred, m):
-    return tf.reduce_mean(tf.square((y_pred - y_true) * tf.convert_to_tensor(m)), axis=-1)
+    m_tensor = tf.convert_to_tensor(m)
+    return (tf.reduce_sum(tf.square((y_pred - y_true) * m_tensor), axis=-1)
+            / tf.reduce_sum(m_tensor, axis=-1))
 
 
 def run_experiment(subdirs, glyph_nums, glyph_metadata, bitmap_size,
@@ -93,6 +95,8 @@ def run_experiment(subdirs, glyph_nums, glyph_metadata, bitmap_size,
             tf.keras.layers.Dense(1024, activation='relu', input_shape=(x_shape, )),
             tf.keras.layers.Dense(512, activation='relu'),
             tf.keras.layers.Dense(256, activation='relu'),
+            tf.keras.layers.Dense(128, activation='relu'),
+            tf.keras.layers.Dense(128, activation='relu'),
             tf.keras.layers.Dense(256, activation='relu'),
             tf.keras.layers.Dense(512, activation='relu'),
             tf.keras.layers.Dense(1024, activation='relu'),
@@ -109,25 +113,32 @@ def run_experiment(subdirs, glyph_nums, glyph_metadata, bitmap_size,
     
     np.random.shuffle(all_combinations)
 
-    learning_rates = [5 * 1e-4, 1e-5]
+    learning_rates = [5 * 1e-4, 1e-5, 1e-6, 1e-8]
     curr_lr_idx = 0
     optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rates[curr_lr_idx])
 
     loss_history = []
+    max_loss_history = []
     countdown = loss_patience
     batch_size = 32
 
+    sample_weights = np.ones(len(all_combinations), dtype=np.float32) / len(all_combinations)
+
     for epoch in range(1, n_epochs):
-        if epoch % 50 == 0:
+        if epoch % 25 == 0:
             curr_lr_idx = (curr_lr_idx + 1) % len(learning_rates)
             tf.keras.backend.set_value(optimizer.learning_rate, learning_rates[curr_lr_idx])
 
-        if epoch == n_epochs // 2:
-            model.save('/data/training/v1/model_checkpoints/epoch_halfway')
+        if epoch % 1000 == 0:
+            model.save(f'/data/training/v1/model_checkpoints/checkpoint_{epoch}')
 
         batch_idx = np.arange(len(all_combinations))
         np.random.shuffle(batch_idx)
         batch_losses = []
+        sample_losses = np.zeros(len(all_combinations))
+
+        sample_weight_ratio = sample_weights.max() / sample_weights.min()
+
         batch_pb = tqdm(range(0, len(all_combinations), batch_size), desc=f'Epoch {epoch}/{n_epochs}',
                         position=0, leave=True)
         for curr_batch_idx in batch_pb:
@@ -136,19 +147,35 @@ def run_experiment(subdirs, glyph_nums, glyph_metadata, bitmap_size,
                 all_combinations[i]
                 for i in curr_batch_indices
             ], len(subdirs), glyph_metadata, bitmap_size, base_names, modifier_names)
+            batch_weights = sample_weights[curr_batch_indices]
             with tf.GradientTape() as tape:
                 pred = model(curr_X, training=True)
-                loss_value = tf.reduce_mean(masked_mse(curr_Y, pred, curr_M))
+                batch_sample_losses = masked_mse(curr_Y, pred, curr_M)
+                sample_losses[curr_batch_indices] = batch_sample_losses.numpy()
+                loss_value = tf.tensordot(tf.convert_to_tensor(batch_weights),
+                                          batch_sample_losses, 1)
 
             grads = tape.gradient(loss_value, model.trainable_weights)
             optimizer.apply_gradients(zip(grads, model.trainable_weights))
             batch_losses.append(float(loss_value))
-            batch_pb.set_postfix({'loss': np.mean(batch_losses)})
+            batch_pb.set_postfix({'loss': np.mean(batch_losses),
+                                  'max_loss': sample_losses.max(),
+                                  'weight_ratio': sample_weight_ratio})
 
         batch_pb.close()
 
+        if epoch % 5 == 0:
+            N_TOP = 10
+            sorted_loss_indices = np.argsort(sample_losses)[::-1]
+            print(f'Top {N_TOP} losses')
+            for i in sorted_loss_indices[:N_TOP]:
+                _, ordered_glyph_idx, size_idx = all_combinations[i]
+                size = subdirs[size_idx].split('/')[-1].split('_')[0]
+                print(f'\tGlyph: {chr(ordered_glyph_idx)} Size: {size}: {sample_losses[i]:.4f}')
 
         loss_history.append(np.mean(batch_losses))
+        max_loss_history.append(sample_losses.max())
+
         if len(loss_history) > 1 and abs(loss_history[-1] - loss_history[-2]) < eps:
             if countdown == 0:
                 break
@@ -157,7 +184,20 @@ def run_experiment(subdirs, glyph_nums, glyph_metadata, bitmap_size,
         else:
             countdown = loss_patience
 
-    return loss_history, model
+        sample_weights = recalculate_weights(sample_losses, entropy=2)
+        if max_loss_history[-1] < 1e-7:
+            break
+        
+
+    return loss_history, max_loss_history, model
+
+
+def recalculate_weights(sample_losses, entropy=.5):
+    # w = np.exp(sample_losses) / np.exp(sample_losses).sum()
+    w = np.abs(sample_losses) / np.abs(sample_losses).sum()
+    w = w ** entropy
+    w = w / w.sum()
+    return w.astype(np.float32)
 
 
 def load_batch(batch, n_sizes, glyph_metadata, bitmap_size, base_names, modifier_names):
@@ -192,9 +232,9 @@ def load_batch(batch, n_sizes, glyph_metadata, bitmap_size, base_names, modifier
 
 
 def main():
-    # root = '/data/ground_truth/times_new_roman'
+    root = '/data/ground_truth/times_new_roman'
     # root = '/data/ground_truth/tahoma'
-    root = '/data/ground_truth/arial'
+    # root = '/data/ground_truth/arial'
     glyph_nums = load_glyph_nums(root)
     glyph_metadata = pd.read_csv(os.path.join(root, 'glyphs.csv'))
     glyph_metadata['modifier_indices'] = glyph_metadata['modifier_indices'].apply(json.loads)
@@ -209,16 +249,19 @@ def main():
     bitmap_size = int(subdirs[-1].split('_')[0])
     subdirs = [os.path.join(root, s) for s in subdirs]
 
-    hist, model = run_experiment(subdirs, glyph_nums, glyph_metadata, bitmap_size,
-                                 base_names, modifier_names,
-                                 eps=1e-10, loss_patience=20, n_epochs=800)
+    hist, max_hist, model = run_experiment(subdirs, glyph_nums, glyph_metadata, bitmap_size,
+                                           base_names, modifier_names,
+                                           eps=0, loss_patience=20, n_epochs=20000)
 
-    os.makedirs('/data/training/v1', exist_ok=True)
-    os.makedirs('/data/results/v1', exist_ok=True)
-    with open('/data/training/v1/loss_hist_arial.json', 'w') as f:
+    os.makedirs('/data/training/v2_small', exist_ok=True)
+    os.makedirs('/data/results/v2_small', exist_ok=True)
+    with open('/data/training/v2_small/loss_hist_times_new_roman.json', 'w') as f:
         json.dump(hist, f)
 
-    model.save('/data/training/v1/model_arial')
+    with open('/data/training/v2_small/loss_max_hist_times_new_roman.json', 'w') as f:
+        json.dump(max_hist, f)
+
+    model.save('/data/training/v2_small/model_times_new_roman')
 
 
 if __name__ == '__main__':

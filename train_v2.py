@@ -81,7 +81,8 @@ def make_mask(downscale_ind, mask_size):
 
 
 def masked_mse(y_true, y_pred, m):
-    return tf.reduce_mean(tf.square((y_pred - y_true) * tf.convert_to_tensor(m)), axis=-1)
+    m_tensor = tf.convert_to_tensor(m)
+    return tf.reduce_sum(tf.square((y_pred - y_true) * m_tensor), axis=-1) / tf.reduce_sum(m_tensor)
 
 
 def run_experiment(subdirs, glyph_nums, glyph_metadata, bitmap_size,
@@ -192,9 +193,9 @@ def load_batch(batch, n_sizes, glyph_metadata, bitmap_size, base_names, modifier
 
 
 def main():
-    # root = '/data/ground_truth/times_new_roman'
+    root = '/data/ground_truth/times_new_roman'
     # root = '/data/ground_truth/tahoma'
-    root = '/data/ground_truth/arial'
+    # root = '/data/ground_truth/arial'
     glyph_nums = load_glyph_nums(root)
     glyph_metadata = pd.read_csv(os.path.join(root, 'glyphs.csv'))
     glyph_metadata['modifier_indices'] = glyph_metadata['modifier_indices'].apply(json.loads)
@@ -213,12 +214,12 @@ def main():
                                  base_names, modifier_names,
                                  eps=1e-10, loss_patience=20, n_epochs=800)
 
-    os.makedirs('/data/training/v1', exist_ok=True)
-    os.makedirs('/data/results/v1', exist_ok=True)
-    with open('/data/training/v1/loss_hist_arial.json', 'w') as f:
+    os.makedirs('/data/training/v2', exist_ok=True)
+    os.makedirs('/data/results/v2', exist_ok=True)
+    with open('/data/training/v2/loss_hist_times_new_roman.json', 'w') as f:
         json.dump(hist, f)
 
-    model.save('/data/training/v1/model_arial')
+    model.save('/data/training/v2/model_times_new_roman')
 
 
 if __name__ == '__main__':

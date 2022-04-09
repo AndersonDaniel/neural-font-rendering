@@ -23,8 +23,9 @@ def load_dir(dir_path):
 
 
 def load_glyph_nums(root):
-    subdir = next(os.walk(root))[1][0]
-    res = sorted(glob(os.path.join(root, subdir, "*.png")),
+    subroot = next(os.walk(root))[1][0]
+    subdir = next(os.walk(os.path.join(root, subroot)))[1][0]
+    res = sorted(glob(os.path.join(root, subroot, subdir, "*.png")),
                  key=lambda x: int(os.path.splitext(os.path.basename(x))[0]))
 
     return [int(os.path.splitext(os.path.basename(x))[0]) for x in res]
@@ -81,29 +82,31 @@ def make_mask(downscale_ind, mask_size):
 
 
 def masked_mse(y_true, y_pred, m):
-    return tf.reduce_mean(tf.square((y_pred - y_true) * tf.convert_to_tensor(m)), axis=-1)
+    m_tensor = tf.convert_to_tensor(m)
+    return (tf.reduce_sum(tf.square((y_pred - y_true) * m_tensor), axis=-1)
+            / tf.reduce_sum(m_tensor, axis=-1))
 
 
 def run_experiment(subdirs, glyph_nums, glyph_metadata, bitmap_size,
-                   base_names, modifier_names,
+                   base_names, modifier_names, font_weights,
                    eps=1e-8, loss_patience=1, model=None, n_epochs=1):
-    x_shape = len(base_names) + len(modifier_names) + len(subdirs)
+    x_shape = len(base_names) + len(modifier_names) + len(list(subdirs.values())[0]) + 1
     if model is None:
         model = tf.keras.models.Sequential([
-            tf.keras.layers.Dense(1024, activation='relu', input_shape=(x_shape, )),
-            tf.keras.layers.Dense(512, activation='relu'),
+            tf.keras.layers.Dense(256, activation='relu', input_shape=(x_shape, )),
+            tf.keras.layers.Dense(128, activation='relu'),
             tf.keras.layers.Dense(256, activation='relu'),
-            tf.keras.layers.Dense(256, activation='relu'),
-            tf.keras.layers.Dense(512, activation='relu'),
             tf.keras.layers.Dense(1024, activation='relu'),
             tf.keras.layers.Dense(bitmap_size * bitmap_size, activation='sigmoid'),
         ])
 
     all_combinations = [
-        (os.path.join(subdir, f'{glyph_num}.png'),
+        (os.path.join(weight_key, subdir, f'{glyph_num}.png'),
          glyph_num,
-         subdir_idx)
-        for subdir_idx, subdir in enumerate(subdirs)
+         subdir_idx,
+         weight_value)
+        for weight_key, weight_value in font_weights.items()
+        for subdir_idx, subdir in enumerate(subdirs[weight_key])
         for glyph_num in glyph_nums
     ]
     
@@ -122,9 +125,6 @@ def run_experiment(subdirs, glyph_nums, glyph_metadata, bitmap_size,
             curr_lr_idx = (curr_lr_idx + 1) % len(learning_rates)
             tf.keras.backend.set_value(optimizer.learning_rate, learning_rates[curr_lr_idx])
 
-        if epoch == n_epochs // 2:
-            model.save('/data/training/v1/model_checkpoints/epoch_halfway')
-
         batch_idx = np.arange(len(all_combinations))
         np.random.shuffle(batch_idx)
         batch_losses = []
@@ -135,7 +135,7 @@ def run_experiment(subdirs, glyph_nums, glyph_metadata, bitmap_size,
             curr_X, curr_M, curr_Y = load_batch([
                 all_combinations[i]
                 for i in curr_batch_indices
-            ], len(subdirs), glyph_metadata, bitmap_size, base_names, modifier_names)
+            ], len(list(subdirs.values())[0]), glyph_metadata, bitmap_size, base_names, modifier_names)
             with tf.GradientTape() as tape:
                 pred = model(curr_X, training=True)
                 loss_value = tf.reduce_mean(masked_mse(curr_Y, pred, curr_M))
@@ -164,7 +164,7 @@ def load_batch(batch, n_sizes, glyph_metadata, bitmap_size, base_names, modifier
     X = []
     M = []
     Y = []
-    for img_path, ordered_glyph_idx, size_idx in batch:
+    for img_path, ordered_glyph_idx, size_idx, weight in batch:
         y = load_img(img_path)
         y_resized, downscale_idx = make_larger(y, bitmap_size)
         m = make_mask(downscale_idx, bitmap_size)
@@ -179,7 +179,7 @@ def load_batch(batch, n_sizes, glyph_metadata, bitmap_size, base_names, modifier
 
         x_size = np.zeros(n_sizes)
         x_size[size_idx] = 1
-        x = np.concatenate([x_glyph_base, x_glyph_modifiers, x_size])
+        x = np.concatenate([x_glyph_base, x_glyph_modifiers, x_size, [weight]])
         X.append(x)
         Y.append(y_resized.ravel())
         M.append(m.ravel())
@@ -192,33 +192,41 @@ def load_batch(batch, n_sizes, glyph_metadata, bitmap_size, base_names, modifier
 
 
 def main():
-    # root = '/data/ground_truth/times_new_roman'
-    # root = '/data/ground_truth/tahoma'
-    root = '/data/ground_truth/arial'
+    root = '/data/ground_truth/roboto'
     glyph_nums = load_glyph_nums(root)
     glyph_metadata = pd.read_csv(os.path.join(root, 'glyphs.csv'))
     glyph_metadata['modifier_indices'] = glyph_metadata['modifier_indices'].apply(json.loads)
+    font_weights = {
+        'roboto-thin': 100/900,
+        # 'roboto-light': 300/900,
+        'roboto-regular': 400/900,
+        # 'roboto-medium': 500/900,
+        'roboto-bold': 700/900,
+    }
 
     with open('/data/glyph_names.json', 'r') as f:
         glyph_names = json.load(f)
         base_names = glyph_names['base']
         modifier_names = glyph_names['modifiers']
 
-    subdirs = next(os.walk(root))[1]
-    subdirs.sort(key=lambda x: int(x.split('_')[0]))
-    bitmap_size = int(subdirs[-1].split('_')[0])
-    subdirs = [os.path.join(root, s) for s in subdirs]
+    subdirs = {}
+    for w in font_weights.keys():
+        curr_subdirs = next(os.walk(os.path.join(root, w)))[1]
+        curr_subdirs.sort(key=lambda x: int(x.split('_')[0]))
+        bitmap_size = int(curr_subdirs[-1].split('_')[0])
+        curr_subdirs = [os.path.join(root, w, s) for s in curr_subdirs]
+        subdirs[w] = curr_subdirs
 
     hist, model = run_experiment(subdirs, glyph_nums, glyph_metadata, bitmap_size,
-                                 base_names, modifier_names,
-                                 eps=1e-10, loss_patience=20, n_epochs=800)
+                                 base_names, modifier_names, font_weights,
+                                 eps=1e-10, loss_patience=20, n_epochs=1600)
 
-    os.makedirs('/data/training/v1', exist_ok=True)
-    os.makedirs('/data/results/v1', exist_ok=True)
-    with open('/data/training/v1/loss_hist_arial.json', 'w') as f:
+    os.makedirs('/data/training/v4_small', exist_ok=True)
+    os.makedirs('/data/results/v4_small', exist_ok=True)
+    with open('/data/training/v4_small/loss_hist_roboto.json', 'w') as f:
         json.dump(hist, f)
 
-    model.save('/data/training/v1/model_arial')
+    model.save('/data/training/v4_small/model_roboto')
 
 
 if __name__ == '__main__':

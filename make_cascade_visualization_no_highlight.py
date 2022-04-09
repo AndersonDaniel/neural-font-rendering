@@ -87,8 +87,6 @@ def main(root):
     indices_chars = list(map(chr, indices))
     indices_chars = list(set(indices_chars).intersection(errors_df.columns.tolist()))
     indices = list(map(ord, indices_chars))
-    all_scores = errors_df.loc[:, indices_chars].values.ravel()
-    worst_scores = all_scores[all_scores.argsort()[::-1][:3]].tolist()
 
     levels = sorted([x for x in os.listdir(root) if os.path.isdir(os.path.join(root, x))])
     sublevels = [
@@ -115,9 +113,6 @@ def main(root):
                 for cidx in indices:
                     err_idx = f'{level}_{sublevel}_{dirname}'
 
-                    curr_err = errors_df.loc[err_idx, chr(cidx)]
-                    
-
                     img = imread(os.path.join(dirpath, f'{cidx}.png'))
                     padding = (bmp_size - size) // 2
                     img_full = np.ones((3 * bmp_size, bmp_size, 3), dtype=img.dtype) * 255
@@ -125,14 +120,6 @@ def main(root):
                     img_full[padding + size:padding + 2 * size, padding:padding + size] = img[:, size:2 * size]
                     img_full[padding + 2 * size:padding + 3 * size, padding:padding + size] = \
                         img[:, 2 * size:3 * size]
-
-                    if curr_err in worst_scores:
-                        err_idx = worst_scores.index(curr_err)
-                        P = 1
-                        img_full[:, :P, 0] = img_full[:, -P:, 0] = img_full[:P, :, 0] = img_full[-P:, :, 0] = 255
-                        img_full[:, :P, 1:] = img_full[:, -P:, 1:] = img_full[:P, :, 1:] = img_full[-P:, :, 1:] = 0
-                        # img_full[..., 0] = 255
-                        # img_full[..., 1:] = 0
 
                     curr_res.append(img_full)
 
@@ -143,7 +130,7 @@ def main(root):
 
 
 if __name__ == '__main__':
-    main('/data/results/v10_real_small/m/comparison')
+    main('/data/results/v10_real_small/cap_a_full_weights/comparison')
     # main('/data/results/v10_real_small/cap_a/comparison')
     # main('/data/results/v9_real_small/cap_a_ampercent/arsenica/comparison', two_levels=True)
     # main('/data/results/v8_real_small/abcxyz/times_new_roman/comparison')

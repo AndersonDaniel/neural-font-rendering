@@ -8,22 +8,15 @@ import cv2
 import pandas as pd
 import json
 import matplotlib.pyplot as plt
-from train_v1 import load_img, make_larger, make_smaller, make_mask, load_batch, load_glyph_nums
+from train_v1 import load_img
+from train_v5_small import load_batch, load_glyph_nums
 
 
 def main():
-    # model = tf.keras.models.load_model('/data/training/v1/model_tahoma')
-    # model = tf.keras.models.load_model('/data/training/v1/model_arial')
-    model = tf.keras.models.load_model('/data/training/v2_small/model_times_new_roman')
-    # model = tf.keras.models.load_model('/data/training/v1/model_checkpoints/checkpoint_31000')
-    # model = tf.keras.models.load_model('/data/training/v3_small/model_times_new_roman')
+    model = tf.keras.models.load_model('/data/training/v5_real_small_generalization/cap_g/model_times_new_roman')
     root = '/data/ground_truth/times_new_roman'
-    results_root = '/data/results/v2_smaller/times_new_roman'
-    # root = '/data/ground_truth/tahoma'
-    # results_root = '/data/results/v2/tahoma'
-    # root = '/data/ground_truth/arial'
-    # results_root = '/data/results/v2/arial'
-    raw_results_path = os.path.join(results_root, 'raw')
+    results_root = '/data/results/v5_real_small_generalization/cap_g/times_new_roman'
+    
     comparison_results_path = os.path.join(results_root, 'comparison')
 
     subdirs = next(os.walk(root))[1]
@@ -43,9 +36,7 @@ def main():
     for subdir_idx, subdir in tqdm(enumerate(subdirs), total=len(subdirs)):
         curr_errors = []
         subdir_base = os.path.split(subdir)[-1]
-        curr_raw_results_path = os.path.join(raw_results_path, subdir_base)
         curr_comparison_results_path = os.path.join(comparison_results_path, subdir_base)
-        os.makedirs(curr_raw_results_path, exist_ok=True)
         os.makedirs(curr_comparison_results_path, exist_ok=True)
 
         curr_batch = [
@@ -55,25 +46,22 @@ def main():
             for glyph_num in glyph_nums
         ]
 
-        curr_X, curr_M, curr_Y = load_batch(
-            curr_batch, len(subdirs), glyph_metadata, bitmap_size, base_names, modifier_names
-        )
+        for i, sample in enumerate(curr_batch):
+            glyph_num = sample[1]
+            curr_X, curr_Y = load_batch(
+                [sample], len(subdirs), glyph_metadata, bitmap_size, base_names, modifier_names
+            )
 
-        Y_pred = model.predict(curr_X)
+            Y_pred = model(curr_X)[:, 0].numpy()
+            img = Y_pred.reshape((-1, int(np.sqrt(Y_pred.shape[0]))))
 
-        for i, (_, glyph_num, _) in enumerate(curr_batch):
-            img = Y_pred[i][np.where(curr_M[i])].reshape((-1, int(np.sqrt(curr_M[i].sum()))))
             img = Image.fromarray(((1 - img) * 255).astype(np.uint8), 'L')
-            img_raw = Y_pred[i].reshape((bitmap_size, -1))
-            img_raw = Image.fromarray(((1 - img_raw) * 255).astype(np.uint8), 'L')
 
-            err_img, gt_img, curr_error = get_error_image(Y_pred[i], curr_M[i], curr_Y[i])
+            err_img, gt_img, curr_error = get_error_image(Y_pred, curr_Y)
             
             res_img = h_concat_images(img, err_img, gt_img)
 
-            img_raw.save(os.path.join(curr_raw_results_path, f'{glyph_num}.png'))
             res_img.save(os.path.join(curr_comparison_results_path, f'{glyph_num}.png'))
-            # curr_error = ((np.asarray(img) - np.asarray(gt_img)) ** 2).mean()
             curr_errors.append(curr_error)
 
         errors.append(curr_errors)
@@ -86,9 +74,9 @@ def main():
     error_df.to_csv(os.path.join(results_root, 'errors.csv'))
 
 
-def get_error_image(y_pred, m, y):
-    y_pred_expanded = y_pred[np.where(m)].reshape((-1, int(np.sqrt(m.sum()))))
-    y_expanded = y[np.where(m)].reshape((-1, int(np.sqrt(m.sum()))))
+def get_error_image(y_pred, y):
+    y_pred_expanded = y_pred.reshape((-1, int(np.sqrt(y_pred.shape[0]))))
+    y_expanded = y.reshape((-1, int(np.sqrt(y.shape[0]))))
     diff = y_pred_expanded - y_expanded
     cmap = plt.get_cmap('RdBu')
     img = cmap((diff + 1) / 2)

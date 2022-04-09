@@ -7,6 +7,7 @@ import tensorflow as tf
 import cv2
 import pandas as pd
 import json
+from scipy.signal import convolve2d
 from tf_utils import ConvergenceEarlyStopping
 
 
@@ -73,15 +74,31 @@ def make_smaller(img, downscale_ind):
     return img[np.ix_(downscale_ind, downscale_ind)]
 
 
+def gaussian(sigma):
+    s = sigma * 2
+    x = np.arange(-s // 2, s // 2 + 1)
+    y = np.arange(-s // 2, s // 2 + 1)
+    xx, yy = np.meshgrid(x, y)
+
+    res = np.exp(-.5 * ((xx ** 2 + yy ** 2) / sigma ** 2)) / (sigma ** 2 * 2 * np.pi)
+    res = res / res.sum()
+
+    return res
+
+
 def make_mask(downscale_ind, mask_size):
-    mask = np.zeros((mask_size, mask_size), dtype=int)
+    mask = np.zeros((mask_size, mask_size), dtype=float)
     mask[np.ix_(downscale_ind, downscale_ind)] = 1
+    g = gaussian(1)
+    mask = np.maximum(convolve2d(mask, g, mode='same'), mask)
 
     return mask
 
 
 def masked_mse(y_true, y_pred, m):
-    return tf.reduce_mean(tf.square((y_pred - y_true) * tf.convert_to_tensor(m)), axis=-1)
+    m_tensor = tf.convert_to_tensor(m)
+    return (tf.reduce_sum(tf.square((y_pred - y_true) * m_tensor), axis=-1)
+            / tf.reduce_sum(m_tensor, axis=-1))
 
 
 def run_experiment(subdirs, glyph_nums, glyph_metadata, bitmap_size,
@@ -90,11 +107,9 @@ def run_experiment(subdirs, glyph_nums, glyph_metadata, bitmap_size,
     x_shape = len(base_names) + len(modifier_names) + len(subdirs)
     if model is None:
         model = tf.keras.models.Sequential([
-            tf.keras.layers.Dense(1024, activation='relu', input_shape=(x_shape, )),
-            tf.keras.layers.Dense(512, activation='relu'),
+            tf.keras.layers.Dense(256, activation='relu', input_shape=(x_shape, )),
+            tf.keras.layers.Dense(128, activation='relu'),
             tf.keras.layers.Dense(256, activation='relu'),
-            tf.keras.layers.Dense(256, activation='relu'),
-            tf.keras.layers.Dense(512, activation='relu'),
             tf.keras.layers.Dense(1024, activation='relu'),
             tf.keras.layers.Dense(bitmap_size * bitmap_size, activation='sigmoid'),
         ])
@@ -121,9 +136,6 @@ def run_experiment(subdirs, glyph_nums, glyph_metadata, bitmap_size,
         if epoch % 50 == 0:
             curr_lr_idx = (curr_lr_idx + 1) % len(learning_rates)
             tf.keras.backend.set_value(optimizer.learning_rate, learning_rates[curr_lr_idx])
-
-        if epoch == n_epochs // 2:
-            model.save('/data/training/v1/model_checkpoints/epoch_halfway')
 
         batch_idx = np.arange(len(all_combinations))
         np.random.shuffle(batch_idx)
@@ -192,9 +204,9 @@ def load_batch(batch, n_sizes, glyph_metadata, bitmap_size, base_names, modifier
 
 
 def main():
-    # root = '/data/ground_truth/times_new_roman'
+    root = '/data/ground_truth/times_new_roman'
     # root = '/data/ground_truth/tahoma'
-    root = '/data/ground_truth/arial'
+    # root = '/data/ground_truth/arial'
     glyph_nums = load_glyph_nums(root)
     glyph_metadata = pd.read_csv(os.path.join(root, 'glyphs.csv'))
     glyph_metadata['modifier_indices'] = glyph_metadata['modifier_indices'].apply(json.loads)
@@ -211,14 +223,14 @@ def main():
 
     hist, model = run_experiment(subdirs, glyph_nums, glyph_metadata, bitmap_size,
                                  base_names, modifier_names,
-                                 eps=1e-10, loss_patience=20, n_epochs=800)
+                                 eps=1e-10, loss_patience=20, n_epochs=1600)
 
-    os.makedirs('/data/training/v1', exist_ok=True)
-    os.makedirs('/data/results/v1', exist_ok=True)
-    with open('/data/training/v1/loss_hist_arial.json', 'w') as f:
+    os.makedirs('/data/training/v3_small', exist_ok=True)
+    os.makedirs('/data/results/v3_small', exist_ok=True)
+    with open('/data/training/v3_small/loss_hist_times_new_roman.json', 'w') as f:
         json.dump(hist, f)
 
-    model.save('/data/training/v1/model_arial')
+    model.save('/data/training/v3_small/model_times_new_roman')
 
 
 if __name__ == '__main__':

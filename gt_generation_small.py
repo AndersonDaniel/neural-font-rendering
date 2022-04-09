@@ -18,9 +18,9 @@ with open('/data/glyph_names.json', 'r') as f:
     modifier_names = names['modifiers']
 
 
-# glyphs = list('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()-=_+:;/\\[]{}",.<>\'|`~')
+glyphs = list('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()-=_+:;/\\[]{}",.<>\'|`~')
 # glyphs = get_supported_glyphs('/Users/andersource/Library/Fonts/yrsa/yrsa-bold.ttf')
-glyphs = None
+# glyphs = None
 
 
 def draw_glyph(face, size, glyph, resolution=72):
@@ -125,14 +125,24 @@ def generate_ground_truth(face, square_size, face_path):
 
 
 FONTS = [
-    # '/System/Library/Fonts/Supplemental/Tahoma.ttf'
-    '/data/fonts/times_new_roman.ttf'
+    '/data/fonts/times_new_roman.ttf',
+    # '/data/fonts/tahoma.ttf',
+    # '/data/fonts/arial.ttf'
 ]
 
 for font in FONTS:
     # face = freetype.Face(os.path.join('/Users/andersource/Library/Fonts/', font))
     font_name = font.split('/')[-1].replace('.ttf', '').lower().replace(' ', '_')
-    glyphs, names = get_supported_glyphs(font)
+    font_glyphs, font_names = get_supported_glyphs(font)
+    font_glyphs, font_names = zip(*[
+        (glyph, name)
+        for glyph, name in zip(font_glyphs, font_names)
+        if glyph in glyphs
+    ])
+
+    glyphs = font_glyphs
+    names = font_names
+
     df = pd.DataFrame({'idx': map(ord, glyphs), 'name': names})
     df['base_name'] = df['name'].str.upper().str.split('WITH').apply(lambda x: x[0]).str.strip()
     df['base_name_idx'] = df['base_name'].apply(base_names.index)
