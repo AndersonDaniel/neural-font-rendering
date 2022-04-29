@@ -19,7 +19,7 @@ def get_trial_history():
     bucket = s3.Bucket('neural-font-rasterization')
     trials = {}
     for obj in bucket.objects.filter(Prefix='hp-search').all():
-        if obj.key.count('/') > 2:
+        if obj.key.count('/') != 2:
             continue
 
         _, exp_name, filename = obj.key.split('/')
