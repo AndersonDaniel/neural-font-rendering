@@ -20,7 +20,7 @@ POSITIONAL_ENCODINGS = (2 ** np.linspace(0, 12, 32)).tolist()
 INTENSITY_CATEGORIES = 21
 REG_LAMBDA = 0
 FOCAL_LOSS_GAMMA = 6
-GLYPH_NUMS = [ord('g')]
+GLYPH_NUMS = [ord('m')]
 
 def cce(y, y_pred, w):
     y_pred = tf.clip_by_value(y_pred, 1e-6, 1 - 1e-6)
@@ -134,7 +134,7 @@ def make_piecewise_lr_schedule(n_epochs):
     ])
 
 
-def run_experiment(subdirs, glyph_nums, glyph_metadata, bitmap_size,
+def run_experiment(subdirs, glyph_nums, glyph_metadata, bitmap_size, n_sizes,
                    base_names, modifier_names, RES_NAME,
                    eps=1e-8, loss_patience=1, model=None, n_epochs=1):
     if model is None:
@@ -210,7 +210,7 @@ def run_experiment(subdirs, glyph_nums, glyph_metadata, bitmap_size,
             curr_X_glyph, curr_X_size, curr_X_pos, curr_X_font, curr_X_extra, curr_Y_cat, curr_Y, W = load_batch([
                 all_combinations[i]
                 for i in curr_batch_indices
-            ], len(subdirs), glyph_metadata, bitmap_size, base_names, modifier_names)
+            ], n_sizes, glyph_metadata, bitmap_size, base_names, modifier_names)
 
             t2 = time()
 
@@ -514,9 +514,11 @@ def main():
         for font, font_roots in roots.items()
     }
 
+    n_sizes = 0
     for font, font_subdirs in subdirs.items():
         for k, v in font_subdirs.items():
             v.sort(key=lambda x: int(x.split('_')[0]))
+            n_sizes = len(v)
 
     bitmap_size = int(list(list(subdirs.values())[0].values())[0][-1].split('_')[0])
     subdirs = {
@@ -527,12 +529,12 @@ def main():
         for font, font_subdirs in subdirs.items()
     }
 
-    RES_NAME = 'g'
+    RES_NAME = 'cap_a'
 
     os.makedirs(f'/data/training/v10_real_small/{RES_NAME}/model_checkpoints', exist_ok=True)
     os.makedirs(f'/data/results/v10_real_small/{RES_NAME}', exist_ok=True)
 
-    hist, max_hist, model, visualization_history = run_experiment(subdirs, glyph_nums, glyph_metadata, bitmap_size,
+    hist, max_hist, model, visualization_history = run_experiment(subdirs, glyph_nums, glyph_metadata, bitmap_size, n_sizes,
                                                                   base_names, modifier_names, RES_NAME,
                                                                   eps=0, loss_patience=20, n_epochs=500)
 

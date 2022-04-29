@@ -9,11 +9,11 @@ import pandas as pd
 import json
 import matplotlib.pyplot as plt
 from train_v1 import load_img
-from train_v10_small import load_batch, GLYPH_NUMS, INTENSITY_CATEGORIES
+from train_v11_small import load_batch, GLYPH_NUMS, INTENSITY_CATEGORIES
 
 
 def main():
-    model = tf.keras.models.load_model('/data/training/v10_real_small/cap_a/model')
+    model = tf.keras.models.load_model('/data/training/v11_real_small/cap_a/model')
     roots = {
         'arsenica': {
             1/7: '/data/ground_truth/arsenica/arsenicatrial-thin',
@@ -59,7 +59,7 @@ def main():
         }
     }
 
-    results_root = '/data/results/v10_real_small/cap_a/'
+    results_root = '/data/results/v11_real_small/cap_a/'
     
     comparison_results_path = os.path.join(results_root, 'comparison')
 

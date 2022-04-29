@@ -15,7 +15,10 @@ import imageio
 
 POSITIONAL_ENCODINGS = (2 ** np.linspace(0, 12, 32)).tolist()
 INTENSITY_CATEGORIES = 21
+REG_LAMBDA = 1e-3
+FOCAL_LOSS_GAMMA = 6
 GLYPH_NUMS = [ord('A')]
+FONT_EMBEDDING_DIM = 1420
 EMBEDDING_LOSS_WEIGHT = .005
 DISCRIMINATOR_LOSS_WEIGHT = .025
 # EMBEDDING_LOSS_WEIGHT = 1e-20
@@ -26,7 +29,7 @@ DISCRIMINATOR_LOSS_WEIGHT = .025
 FAKE_OPTIMIZER_LR_RATIO = 50
 
 
-def focal_loss_cce(y, y_pred, FOCAL_LOSS_GAMMA):
+def focal_loss_cce(y, y_pred):
     y_pred = tf.clip_by_value(y_pred, 1e-6, 1 - 1e-6)
     return -tf.reduce_mean(
         tf.reduce_sum(
@@ -55,13 +58,7 @@ def load_dir(dir_path):
     ]
 
 
-def make_inner_model(
-    FONT_EMBEDDING_DIM,
-    modification_model_layer_size,
-    modification_model_n_layers,
-    rasterizer_layer_size,
-    rasterizer_n_layers_in_block
-):
+def make_inner_model():
     x_font = tf.keras.layers.Input((FONT_EMBEDDING_DIM,))
     x_size = tf.keras.layers.Input((2 * len(POSITIONAL_ENCODINGS) + 1,))
     x_pos = tf.keras.layers.Input((2 * (2 * len(POSITIONAL_ENCODINGS) + 1),))
@@ -69,10 +66,12 @@ def make_inner_model(
     w = tf.convert_to_tensor(np.linspace(0, 1, INTENSITY_CATEGORIES).reshape((-1, 1)).astype(np.float32))
 
     embedding_extra_modification_model = tf.keras.models.Sequential([
-        tf.keras.layers.Dense(modification_model_layer_size, input_shape=(x_font.shape[1] + x_extra.shape[1],),
+        tf.keras.layers.Dense(300, input_shape=(x_font.shape[1] + x_extra.shape[1],),
                               activation='relu'),
-        *[tf.keras.layers.Dense(modification_model_layer_size, activation='relu')
-          for i in range(modification_model_n_layers)],
+        tf.keras.layers.Dense(300, activation='relu'),
+        tf.keras.layers.Dense(300, activation='relu'),
+        tf.keras.layers.Dense(300, activation='relu'),
+        tf.keras.layers.Dense(300, activation='relu'),
         tf.keras.layers.Dense(x_font.shape[1], activation='tanh')
     ])
 
@@ -81,10 +80,12 @@ def make_inner_model(
     )
 
     embedding_size_modification_model = tf.keras.models.Sequential([
-        tf.keras.layers.Dense(modification_model_layer_size, input_shape=(modified_embedding.shape[1] + x_size.shape[1],),
+        tf.keras.layers.Dense(300, input_shape=(modified_embedding.shape[1] + x_size.shape[1],),
                               activation='relu'),
-        *[tf.keras.layers.Dense(modification_model_layer_size, activation='relu')
-          for i in range(modification_model_n_layers)],
+        tf.keras.layers.Dense(300, activation='relu'),
+        tf.keras.layers.Dense(300, activation='relu'),
+        tf.keras.layers.Dense(300, activation='relu'),
+        tf.keras.layers.Dense(300, activation='relu'),
         tf.keras.layers.Dense(modified_embedding.shape[1], activation='tanh'),
     ])
 
@@ -94,45 +95,33 @@ def make_inner_model(
     
     x = tf.keras.layers.Concatenate()([x_pos, modified_embedding])
     x = tf.keras.layers.Dense(1620, activation='relu')(x)
-    x = tf.keras.layers.Dense(rasterizer_layer_size, activation='relu')(x)
+    x = tf.keras.layers.Dense(1082, activation='relu')(x)
     x = tf.keras.layers.BatchNormalization()(x)
-    for i in range(rasterizer_n_layers_in_block):
-        x = x + tf.keras.layers.Dense(rasterizer_layer_size, activation='relu')(x)
-
+    x = x + tf.keras.layers.Dense(1082, activation='relu')(x)
+    x = x + tf.keras.layers.Dense(1082, activation='relu')(x)
+    x = x + tf.keras.layers.Dense(1082, activation='relu')(x)
     x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.Concatenate()([x, modified_embedding])
-    x = tf.keras.layers.Dense(rasterizer_layer_size, activation='relu')(x)
-    for i in range(rasterizer_n_layers_in_block):
-        x = x + tf.keras.layers.Dense(rasterizer_layer_size, activation='relu')(x)
-
+    x = tf.keras.layers.Dense(1082, activation='relu')(x)
+    x = x + tf.keras.layers.Dense(1082, activation='relu')(x)
+    x = x + tf.keras.layers.Dense(1082, activation='relu')(x)
+    x = x + tf.keras.layers.Dense(1082, activation='relu')(x)
     x = tf.keras.layers.BatchNormalization()(x)
-    x = x + tf.keras.layers.Dense(rasterizer_layer_size, activation='relu')(x)
-    x = x + tf.keras.layers.Dense(rasterizer_layer_size, activation='relu')(x)
+    x = x + tf.keras.layers.Dense(1082, activation='relu')(x)
+    x = x + tf.keras.layers.Dense(1082, activation='relu')(x)
     x = tf.keras.layers.Dense(INTENSITY_CATEGORIES, activation='softmax')(x)
     y = tf.matmul(x, w)[:, 0]
     
     return tf.keras.models.Model(inputs=[x_size, x_pos, x_font, x_extra], outputs=[x, y, modified_embedding])
 
 
-def make_model(n_glyphs, n_fonts,
-               FONT_EMBEDDING_DIM,
-               modification_model_layer_size,
-               modification_model_n_layers,
-               rasterizer_layer_size,
-               rasterizer_n_layers_in_block
-            ):
+def make_model(n_glyphs, n_fonts):
     x_glyph = tf.keras.layers.Input((1,))
     x_size = tf.keras.layers.Input((2 * len(POSITIONAL_ENCODINGS) + 1,))
     x_pos = tf.keras.layers.Input((2 * (2 * len(POSITIONAL_ENCODINGS) + 1),))
     x_font = tf.keras.layers.Input((1,))
     x_extra = tf.keras.layers.Input((1,))
-    inner_model = make_inner_model(
-        FONT_EMBEDDING_DIM,
-        modification_model_layer_size,
-        modification_model_n_layers,
-        rasterizer_layer_size,
-        rasterizer_n_layers_in_block
-    )
+    inner_model = make_inner_model()
 
     font_embedding_layer = tf.keras.layers.Embedding(n_fonts, FONT_EMBEDDING_DIM, input_length=1)
     font_embedding = tf.keras.layers.Flatten()(font_embedding_layer(x_font))
@@ -144,7 +133,7 @@ def make_model(n_glyphs, n_fonts,
             tf.keras.models.Sequential([font_embedding_layer]))
 
 
-def make_discriminator_classifier(FONT_EMBEDDING_DIM):
+def make_discriminator_classifier():
     model = tf.keras.models.Sequential([
         tf.keras.layers.Conv2D(4, (3, 3), activation='relu'),
         tf.keras.layers.Conv2D(8, (3, 3), activation='relu'),
@@ -182,7 +171,7 @@ def make_piecewise_lr_schedule(n_epochs):
 
 def single_batch(model, discriminator, model_input,
                  actual_size, generator_optimizer, discriminator_optimizer,
-                 batch_size, REG_LAMBDA, FOCAL_LOSS_GAMMA, curr_Y_cat=None):
+                 batch_size, curr_Y_cat=None):
     with tf.GradientTape(persistent=True) as tape:
         pred_cat, pred, embedding = model(model_input, training=True)
                                     
@@ -196,7 +185,7 @@ def single_batch(model, discriminator, model_input,
         discriminator_class = 0
         if curr_Y_cat is not None:
             bce_loss_value = (
-                focal_loss_cce(curr_Y_cat, pred_cat, FOCAL_LOSS_GAMMA)
+                focal_loss_cce(curr_Y_cat, pred_cat)
                     + REG_LAMBDA * tf.reduce_mean(tf.reduce_sum(embedding ** 2, axis=1))
             )
             loss_denominator = 1
@@ -232,23 +221,11 @@ def single_batch(model, discriminator, model_input,
 
 def run_experiment(subdirs, glyph_nums, glyph_metadata, bitmap_size, n_sizes,
                    base_names, modifier_names, RES_NAME,
-                   FONT_EMBEDDING_DIM,
-                   modification_model_layer_size,
-                   modification_model_n_layers,
-                   rasterizer_layer_size,
-                   rasterizer_n_layers_in_block, REG_LAMBDA, FOCAL_LOSS_GAMMA, 
                    model=None, n_epochs=1):
     if model is None:
-        model, inner_model, font_embeddings = make_model(
-            glyph_metadata.shape[0], len(subdirs),
-            FONT_EMBEDDING_DIM,
-            modification_model_layer_size,
-            modification_model_n_layers,
-            rasterizer_layer_size,
-            rasterizer_n_layers_in_block
-        )
+        model, inner_model, font_embeddings = make_model(glyph_metadata.shape[0], len(subdirs))
 
-    discriminator = make_discriminator_classifier(FONT_EMBEDDING_DIM)
+    discriminator = make_discriminator_classifier()
 
     all_combinations = [
         (os.path.join(subdir, f'{glyph_num}.png'),
@@ -306,7 +283,7 @@ def run_experiment(subdirs, glyph_nums, glyph_metadata, bitmap_size, n_sizes,
                 single_batch(model, discriminator,
                              [curr_X_glyph, curr_X_size, curr_X_pos, curr_X_font, curr_X_extra],
                              actual_size, generator_optimizer_real, discriminator_optimizer,
-                             curr_batch_size, REG_LAMBDA, FOCAL_LOSS_GAMMA, curr_Y_cat)
+                             curr_batch_size, curr_Y_cat)
 
             batch_generator_losses.append(float(loss_value))
             batch_discriminator_losses.append(float(discriminator_loss_value))
@@ -330,7 +307,7 @@ def run_experiment(subdirs, glyph_nums, glyph_metadata, bitmap_size, n_sizes,
                 single_batch(inner_model, discriminator,
                             inner_model_input,
                             actual_size, generator_optimizer_fake, discriminator_optimizer,
-                            curr_batch_size, REG_LAMBDA, FOCAL_LOSS_GAMMA)
+                            curr_batch_size)
 
             # batch_generator_losses.append(float(loss_value))
             batch_discriminator_losses.append(float(discriminator_loss_value))
@@ -438,15 +415,7 @@ def get_free_ram_percent():
     return free_memory / total_memory
 
 
-def main(
-    REG_LAMBDA,
-    FOCAL_LOSS_GAMMA,
-    FONT_EMBEDDING_DIM,
-    modification_model_layer_size,
-    modification_model_n_layers,
-    rasterizer_layer_size,
-    rasterizer_n_layers_in_block
-):
+def main():
     roots = {
         'arsenica': {
             1/7: '/data/ground_truth/arsenica/arsenicatrial-thin',
@@ -534,12 +503,6 @@ def main(
      model, inner_model, font_embeddings) = run_experiment(subdirs, glyph_nums, glyph_metadata,
                                                            bitmap_size, n_sizes,
                                                            base_names, modifier_names, RES_NAME,
-                                                           FONT_EMBEDDING_DIM,
-                                                           modification_model_layer_size,
-                                                           modification_model_n_layers,
-                                                           rasterizer_layer_size,
-                                                           rasterizer_n_layers_in_block,
-                                                           REG_LAMBDA, FOCAL_LOSS_GAMMA, 
                                                            n_epochs=5)
 
     with open(f'/data/training/v11_real_small/{RES_NAME}/bce_loss_hist.json', 'w') as f:

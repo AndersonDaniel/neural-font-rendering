@@ -159,8 +159,8 @@ def generate_ground_truth(faces, square_size, face_paths):
 
 
 FONT_ROOTS = [
-    # '/data/fonts/roboto/'
-    # '/data/fonts/arsenica/'
+    '/data/fonts/roboto/',
+    '/data/fonts/arsenica/',
     '/data/fonts/times_new_roman',
     '/data/fonts/hind',
     '/data/fonts/dancing_script',

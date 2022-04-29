@@ -143,7 +143,10 @@ def main(root):
 
 
 if __name__ == '__main__':
-    main('/data/results/v10_real_small/m/comparison')
+    main('/data/results/v11_real_small/cap_a_random_fonts/comparison')
+    # main('/data/results/v11_real_small/cap_a_full_weights/comparison')
+    # main('/data/results/v11_real_small/cap_a/comparison')
+    # main('/data/results/v10_real_small/m/comparison')
     # main('/data/results/v10_real_small/cap_a/comparison')
     # main('/data/results/v9_real_small/cap_a_ampercent/arsenica/comparison', two_levels=True)
     # main('/data/results/v8_real_small/abcxyz/times_new_roman/comparison')
