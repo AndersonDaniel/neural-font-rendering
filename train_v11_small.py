@@ -540,7 +540,7 @@ def main(
                                                            rasterizer_layer_size,
                                                            rasterizer_n_layers_in_block,
                                                            REG_LAMBDA, FOCAL_LOSS_GAMMA, 
-                                                           n_epochs=5)
+                                                           n_epochs=500)
 
     with open(f'/data/training/v11_real_small/{RES_NAME}/bce_loss_hist.json', 'w') as f:
         json.dump(bce_hist, f)
