@@ -12,13 +12,13 @@ from list_supported_glyphs import get_supported_glyphs
 METRIC_NAMES = ['height', 'horiAdvance', 'horiBearingX', 'horiBearingY', 'width']
 
 
-with open('/data/glyph_names.json', 'r') as f:
+with open('/home/ubuntu/data/glyph_names.json', 'r') as f:
     names = json.load(f)
     base_names = names['base']
     modifier_names = names['modifiers']
 
 
-# glyphs = list('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()-=_+:;/\\[]{}",.<>\'|`~')
+actual_glyphs = list('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789,./?><!@#$%^&*()-=_+')
 # glyphs = get_supported_glyphs('/Users/andersource/Library/Fonts/yrsa/yrsa-bold.ttf')
 glyphs = None
 
@@ -112,8 +112,7 @@ def generate_ground_truth(face, square_size, face_path):
     dir_path = os.path.join(face_path, f'{square_size}_pointsize_{point_size}_resolution_{resolution}')
     os.makedirs(dir_path, exist_ok=True)
     for i, (bmp, metric, glyph) in enumerate(zip(bmps, metrics, glyphs)):
-        # img = np.ones((height, width))
-        img = np.ones((square_size, square_size))
+        img = np.zeros((square_size, square_size))
         col_start = int(metric['horiBearingX'] - x_min)
         col_end = int(col_start + metric['width'])
         row_start = height - int(metric['horiBearingY'] - y_min)
@@ -125,15 +124,28 @@ def generate_ground_truth(face, square_size, face_path):
 
 
 FONTS = [
-    # '/data/fonts/times_new_roman.ttf'
-    # '/data/fonts/tahoma.ttf'
-    '/data/fonts/arial.ttf'
+    '/home/ubuntu/data/fonts/times_new_roman.ttf',
+    # '/home/ubuntu/data/fonts/tahoma.ttf',
+    # '/home/ubuntu/data/fonts/arial.ttf'
+    # '/home/ubuntu/data/fonts/lucida_sans.ttf',
+    # '/home/ubuntu/data/fonts/lucida_bright.ttf'
 ]
 
 for font in FONTS:
     # face = freetype.Face(os.path.join('/Users/andersource/Library/Fonts/', font))
     font_name = font.split('/')[-1].replace('.ttf', '').lower().replace(' ', '_')
     glyphs, names = get_supported_glyphs(font)
+
+    new_glyphs = []
+    new_names = []
+    for glyph, name in zip(glyphs, names):
+        if glyph in actual_glyphs:
+            new_glyphs.append(glyph)
+            new_names.append(name)
+
+    glyphs = new_glyphs
+    names = new_names
+    
     df = pd.DataFrame({'idx': map(ord, glyphs), 'name': names})
     df['base_name'] = df['name'].str.upper().str.split('WITH').apply(lambda x: x[0]).str.strip()
     df['base_name_idx'] = df['base_name'].apply(base_names.index)
@@ -145,12 +157,13 @@ for font in FONTS:
                        .apply(lambda x: x if x != [''] else []))
 
     df['modifier_indices'] = df['modifiers'].apply(lambda x: list(map(modifier_names.index, x))).apply(json.dumps)
-    font_path = os.path.join('/data/ground_truth', font_name)
+    font_path = os.path.join('/home/ubuntu/data/ground_truth', font_name)
     os.makedirs(font_path, exist_ok=True)
     df.to_csv(os.path.join(font_path, 'glyphs.csv'), index=False)
 
     face = freetype.Face(font)
 
-    for square_size in tqdm(range(20, 64), desc=f'Generating for {font_name}'):
+    # for square_size in tqdm(range(20, 64), desc=f'Generating for {font_name}'):
+    for square_size in tqdm(range(30, 50), desc=f'Generating for {font_name}'):
         generate_ground_truth(face, square_size, font_path)
 

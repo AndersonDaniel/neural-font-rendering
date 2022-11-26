@@ -91,6 +91,7 @@ def main(root):
     worst_scores = all_scores[all_scores.argsort()[::-1][:3]].tolist()
 
     levels = sorted([x for x in os.listdir(root) if os.path.isdir(os.path.join(root, x))])
+    
     sublevels = [
         sorted([x for x in os.listdir(os.path.join(root, level)) if os.path.isdir(os.path.join(root, level, x))])
         for level in levels
@@ -143,7 +144,10 @@ def main(root):
 
 
 if __name__ == '__main__':
-    main('/data/results/v11_real_small/cap_a_random_fonts/comparison')
+    main('/home/ubuntu/data/results/implicit_multiple_fonts/exp2/one/results/comparison')
+    # main('/home/ubuntu/data/results/implicit_multiple_weights/roboto/lower_case_g/results/comparison')
+    # main('/home/ubuntu/data/results/memorization_masked_mlp/times_new_roman/lowercase_g/results/comparison')
+    # main('/data/results/v11_real_small/cap_a_random_fonts/comparison')
     # main('/data/results/v11_real_small/cap_a_full_weights/comparison')
     # main('/data/results/v11_real_small/cap_a/comparison')
     # main('/data/results/v10_real_small/m/comparison')

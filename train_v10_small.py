@@ -20,7 +20,7 @@ POSITIONAL_ENCODINGS = (2 ** np.linspace(0, 12, 32)).tolist()
 INTENSITY_CATEGORIES = 21
 REG_LAMBDA = 0
 FOCAL_LOSS_GAMMA = 6
-GLYPH_NUMS = [ord('A')]
+GLYPH_NUMS = [ord('g')]
 
 def cce(y, y_pred, w):
     y_pred = tf.clip_by_value(y_pred, 1e-6, 1 - 1e-6)

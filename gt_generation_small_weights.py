@@ -12,7 +12,7 @@ from list_supported_glyphs import get_supported_glyphs
 METRIC_NAMES = ['height', 'horiAdvance', 'horiBearingX', 'horiBearingY', 'width']
 
 
-with open('/data/glyph_names.json', 'r') as f:
+with open('/home/ubuntu/data/glyph_names.json', 'r') as f:
     names = json.load(f)
     base_names = names['base']
     modifier_names = names['modifiers']
@@ -159,12 +159,13 @@ def generate_ground_truth(faces, square_size, face_paths):
 
 
 FONT_ROOTS = [
-    '/data/fonts/roboto/',
-    '/data/fonts/arsenica/',
-    '/data/fonts/times_new_roman',
-    '/data/fonts/hind',
-    '/data/fonts/dancing_script',
-    '/data/fonts/roboto_slab'
+    # '/home/ubuntu/data/fonts/roboto/',
+    '/home/ubuntu/data/fonts/arsenica/',
+    # '/data/fonts/arsenica/',
+    # '/data/fonts/times_new_roman',
+    # '/data/fonts/hind',
+    # '/data/fonts/dancing_script',
+    # '/data/fonts/roboto_slab'
 ]
 
 for font_root in FONT_ROOTS:
@@ -195,15 +196,16 @@ for font_root in FONT_ROOTS:
 
     df['modifier_indices'] = df['modifiers'].apply(lambda x: list(map(modifier_names.index, x))).apply(json.dumps)
     font_paths = [
-        os.path.join('/data/ground_truth', font_name,
+        os.path.join('/home/ubuntu/data/ground_truth', font_name,
                      font.replace('.ttf', '').lower().replace(' ', '_'))
         for font in os.listdir(font_root)
         ]
 
-    font_path = os.path.join('/data/ground_truth', font_name)
+    font_path = os.path.join('/home/ubuntu/data/ground_truth', font_name)
     os.makedirs(font_path, exist_ok=True)
     df.to_csv(os.path.join(font_path, 'glyphs.csv'), index=False)
 
-    for square_size in tqdm(range(20, 64), desc=f'Generating for {font_name}'):
+    # for square_size in tqdm(range(20, 64), desc=f'Generating for {font_name}'):
+    for square_size in tqdm(range(30, 51), desc=f'Generating for {font_name}'):
         generate_ground_truth(faces, square_size, font_paths)
 
